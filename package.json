@@ -1,0 +1,51 @@
+{
+  "name": "zalo-desktop",
+  "version": "1.0.0",
+  "description": "Zalo Web Client Đa Nền Tảng",
+  "homepage": "https://github.com/cid-highwind/zalo-desktop",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:linux": "electron-builder --linux pacman",
+    "build:win": "electron-builder --win nsis",
+    "build:mac": "electron-builder --mac dmg",
+    "build:all": "electron-builder --linux pacman --win nsis"
+  },
+  "author": {
+    "name": "Cid Highwind",
+    "email": "ducvd89@gmail.com"
+  },
+  "license": "ISC",
+  "build": {
+    "appId": "com.cachyos.zalo",
+    "productName": "Zalo",
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": ["pacman"],
+      "category": "Network",
+      "icon": "icon.png",
+      "maintainer": "Cid Highwind <ducvd89@gmail.com>"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "icon.icns",
+      "category": "public.app-category.social-networking"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
