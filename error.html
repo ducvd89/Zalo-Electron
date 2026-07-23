@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mất kết nối</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: "Segoe UI", -apple-system, Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #1c1e21;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #18191a; color: #e4e6eb; }
+      .card { background: #242526 !important; }
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px 56px;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+      max-width: 420px;
+    }
+    .icon { font-size: 64px; margin-bottom: 16px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    p { font-size: 15px; opacity: 0.75; margin: 0 0 24px; line-height: 1.5; }
+    button {
+      background: #0068ff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #006ae0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>Không có kết nối mạng</h1>
+    <p>
+      Đã thử kết nối lại nhiều lần nhưng không thành công.<br />
+      Vui lòng kiểm tra đường truyền Internet rồi thử lại.
+    </p>
+    <button onclick="retry()">Thử lại</button>
+  </div>
+  <script>
+    function retry() {
+      location.replace('https://chat.zalo.me/');
+    }
+    // Có mạng trở lại thì tự động kết nối
+    window.addEventListener('online', retry);
+  </script>
+</body>
+</html>

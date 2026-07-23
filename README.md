@@ -1,134 +1,39 @@
-# Zalo-Electron
+# Zalo Web Desktop
 
-A simple Electron-based desktop wrapper for Zalo Web.
+Ứng dụng Zalo cho máy tính (bọc bản web `chat.zalo.me`) — Windows / macOS / Linux, xây dựng bằng Electron.
 
-> Note: This project is an unofficial wrapper around the Zalo web client. Use it according to Zalo's terms of service. This repository is intended as a convenience desktop app built with Electron and web technologies.
-
-## Table of Contents
-
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Development](#development)
-- [Packaging / Building](#packaging--building)
-- [Configuration](#configuration)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
-
-## Features
-
-- Lightweight Electron wrapper around Zalo Web
-- Native desktop window, notifications, and keyboard shortcuts (depends on implementation)
-- Auto-update / packaging-ready scaffold (if configured)
-
-> Customize this list to match the actual features implemented by your project.
-
-## Prerequisites
-
-- Node.js (v14+ recommended)
-- npm or yarn
-- Git (to clone the repo)
-
-## Installation
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/ducvd89/Zalo-Electron.git
-cd Zalo-Electron
-```
-
-2. Install dependencies:
+## Chạy thử
 
 ```bash
 npm install
-# or
-# yarn install
-```
-
-3. Run the app in development:
-
-```bash
 npm start
-# or
-# yarn start
 ```
 
-Notes:
-- If your project uses a different start script (for example `npm run dev`), update the commands above accordingly.
+## Đóng gói
 
-## Usage
+| Lệnh | Kết quả |
+|---|---|
+| `npm run dist:win` | File cài đặt `.exe` (NSIS) cho Windows |
+| `npm run dist:linux` | Gói `.pacman` cho Arch/CachyOS (chạy trên máy Linux) |
+| `npm run dist:mac` | File `.dmg` cho macOS (chạy trên máy Mac) |
 
-- After running `npm start`, the Electron window should open and load the Zalo Web interface.
-- You may want to implement desktop integrations such as notifications, tray icon, global shortcuts, and deep linking.
+File xuất ra nằm trong thư mục `dist/`.
 
-## Development
+> Lưu ý: gói `.pacman` phải build trên Linux, `.dmg` phải build trên macOS
+> (giới hạn của electron-builder). Build `.exe` thực hiện ngay trên Windows.
 
-- Use `npm run` to see available scripts defined in package.json:
+## Tính năng
 
-```bash
-npm run
-```
-
-Common scripts you might add to package.json:
-
-- `start` — run the Electron app in development
-- `dev` — run a mode with hot reload (if set up)
-- `build` or `package` — package the app for distribution (using electron-builder, electron-forge, or similar)
-
-## Packaging / Building
-
-If you plan to distribute the app, consider using electron-builder or electron-forge.
-
-Example with electron-builder:
-
-```json
-// package.json (example scripts)
-{
-  "scripts": {
-    "start": "electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder"
-  }
-}
-```
-
-Then run:
-
-```bash
-npm run dist
-```
-
-Adjust targets and configuration in `package.json` or `electron-builder.yml` as needed for Windows/macOS/Linux.
-
-## Configuration
-
-- If your app requires custom configuration (proxy, user agent, or other flags), document them here.
-- If you use environment variables, list them and their defaults.
-
-## Contributing
-
-Contributions are welcome. To contribute:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Commit your changes: `git commit -m "Add some feature"`
-4. Push to your fork: `git push origin feat/my-feature`
-5. Open a pull request describing your change
-
-Please follow any style and testing guidelines you have in the repo.
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
-## Contact
-
-Maintainer: ducvd89
-Repository: https://github.com/ducvd89/Zalo-Electron
-
----
-
-Customize this README with project-specific details (features, actual scripts, build configuration, screenshots, and a proper license file).
+- Khay hệ thống: Mở ứng dụng / Tải lại trang / Khởi động cùng hệ thống (có
+  dấu tick trạng thái) / Thoát hẳn; bấm (X) chỉ ẩn app xuống khay.
+- Đếm tin nhắn chưa đọc từ tiêu đề trang: tooltip ở khay, chấm đỏ trên
+  Taskbar (Windows) và badge trên Dock (macOS) / Launcher (Linux).
+- Chuột phải: sao chép chữ, sao chép/lưu hình ảnh, sao chép/mở liên kết.
+- Link ngoài mở bằng trình duyệt mặc định; deep-link `zalo://` bị chặn để
+  không bị đá văng sang app Zalo gốc của hệ điều hành.
+- Cho phép popup `about:blank` và link nội bộ zalo.me / zaloapp.com để gọi
+  thoại / gọi video (WebRTC) hoạt động.
+- Mất mạng: tự thử lại tối đa 10 lần, hỏng hẳn thì hiện trang lỗi thân thiện,
+  có mạng lại thì tự kết nối.
+- macOS: có Application Menu để Cmd+C / Cmd+V / Cmd+Q hoạt động.
+- User-Agent Chrome mới cài toàn cục để Zalo không chặn "trình duyệt cũ".
