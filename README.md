@@ -1,39 +1,40 @@
 # Zalo Web Desktop
 
-Ứng dụng Zalo cho máy tính (bọc bản web `chat.zalo.me`) — Windows / macOS / Linux, xây dựng bằng Electron.
+Zalo desktop app (wrapping the `chat.zalo.me` web version) for Windows / macOS / Linux, built with Electron.
 
-## Chạy thử
+## Run in development
 
 ```bash
 npm install
 npm start
 ```
 
-## Đóng gói
+## Packaging
 
-| Lệnh | Kết quả |
+| Command | Output |
 |---|---|
-| `npm run dist:win` | File cài đặt `.exe` (NSIS) cho Windows |
-| `npm run dist:linux` | Gói `.pacman` cho Arch/CachyOS (chạy trên máy Linux) |
-| `npm run dist:mac` | File `.dmg` cho macOS (chạy trên máy Mac) |
+| `npm run dist:win` | `.exe` installer (NSIS) for Windows |
+| `npm run dist:linux` | `.pacman` package for Arch/CachyOS (run on Linux) |
+| `npm run dist:mac` | `.dmg` for macOS (run on a Mac) |
 
-File xuất ra nằm trong thư mục `dist/`.
+Artifacts are written to the `dist/` folder.
 
-> Lưu ý: gói `.pacman` phải build trên Linux, `.dmg` phải build trên macOS
-> (giới hạn của electron-builder). Build `.exe` thực hiện ngay trên Windows.
+> Note: the `.pacman` package must be built on Linux and the `.dmg` on macOS
+> (an electron-builder limitation). The `.exe` builds right on Windows.
 
-## Tính năng
+## Features
 
-- Khay hệ thống: Mở ứng dụng / Tải lại trang / Khởi động cùng hệ thống (có
-  dấu tick trạng thái) / Thoát hẳn; bấm (X) chỉ ẩn app xuống khay.
-- Đếm tin nhắn chưa đọc từ tiêu đề trang: tooltip ở khay, chấm đỏ trên
-  Taskbar (Windows) và badge trên Dock (macOS) / Launcher (Linux).
-- Chuột phải: sao chép chữ, sao chép/lưu hình ảnh, sao chép/mở liên kết.
-- Link ngoài mở bằng trình duyệt mặc định; deep-link `zalo://` bị chặn để
-  không bị đá văng sang app Zalo gốc của hệ điều hành.
-- Cho phép popup `about:blank` và link nội bộ zalo.me / zaloapp.com để gọi
-  thoại / gọi video (WebRTC) hoạt động.
-- Mất mạng: tự thử lại tối đa 10 lần, hỏng hẳn thì hiện trang lỗi thân thiện,
-  có mạng lại thì tự kết nối.
-- macOS: có Application Menu để Cmd+C / Cmd+V / Cmd+Q hoạt động.
-- User-Agent Chrome mới cài toàn cục để Zalo không chặn "trình duyệt cũ".
+- System tray: Open App / Reload Page / Launch at Startup (with a checkmark
+  showing its state) / Quit; the (X) button only hides the app to the tray.
+- Unread message counter parsed from the page title: tray tooltip, red-dot
+  overlay on the Windows Taskbar, badge on the macOS Dock / Linux launcher.
+- Right-click menu: copy text, copy/save images, copy/open links.
+- External links open in the OS default browser; `zalo://` deep links are
+  blocked so the app never gets kicked out to the native Zalo application.
+- `about:blank` popups and internal zalo.me / zaloapp.com links are allowed
+  inside the app so voice / video calls (WebRTC) work smoothly.
+- Network resilience: retries up to 10 times on connection loss, then shows
+  a friendly error page that reconnects automatically once back online.
+- macOS: native Application Menu so Cmd+C / Cmd+V / Cmd+Q work.
+- Modern Chrome User-Agent set globally so Zalo does not reject the app as
+  an outdated browser.

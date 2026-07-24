@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Mất kết nối</title>
+  <title>Connection Lost</title>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -40,24 +40,24 @@
       font-weight: 600;
       cursor: pointer;
     }
-    button:hover { background: #006ae0; }
+    button:hover { background: #0052cc; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">📡</div>
-    <h1>Không có kết nối mạng</h1>
+    <h1>No Internet Connection</h1>
     <p>
-      Đã thử kết nối lại nhiều lần nhưng không thành công.<br />
-      Vui lòng kiểm tra đường truyền Internet rồi thử lại.
+      We tried to reconnect several times without success.<br />
+      Please check your Internet connection and try again.
     </p>
-    <button onclick="retry()">Thử lại</button>
+    <button onclick="retry()">Try Again</button>
   </div>
   <script>
     function retry() {
       location.replace('https://chat.zalo.me/');
     }
-    // Có mạng trở lại thì tự động kết nối
+    // Reconnect automatically as soon as the network is back
     window.addEventListener('online', retry);
   </script>
 </body>

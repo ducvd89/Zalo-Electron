@@ -14,23 +14,23 @@ const fs = require('fs');
 
 const APP_URL = 'https://chat.zalo.me/';
 
-// Các host được phép mở NGAY TRONG ứng dụng (hệ sinh thái Zalo).
-// Mọi thứ khác sẽ bị đẩy ra trình duyệt mặc định của hệ điều hành.
+// Hosts allowed to open INSIDE the app (Zalo ecosystem).
+// Everything else is pushed out to the OS default browser.
 const INTERNAL_HOSTS = [
-  'zalo.me',      // chat.zalo.me, id.zalo.me (đăng nhập), qr.zalo.me...
+  'zalo.me',      // chat.zalo.me, id.zalo.me (login), qr.zalo.me...
   'zaloapp.com',
-  'zdn.vn',       // CDN ảnh/sticker
-  'zadn.vn',      // CDN cũ
+  'zdn.vn',       // image/sticker CDN
+  'zadn.vn',      // legacy CDN
 ];
 
-// UA của Chrome mới để Zalo không chặn "trình duyệt cũ" / trình duyệt lạ.
+// Modern Chrome UA so Zalo does not block "outdated/unknown browsers".
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 const MAX_RETRY = 10;
 const RETRY_DELAY_MS = 3000;
 
-// Cờ báo app được khởi động cùng hệ thống → mở ẩn dưới khay, không bung cửa sổ
+// Flag meaning the app was started at login → stay hidden in the tray
 const AUTO_START_ARG = '--hidden';
 
 let mainWindow = null;
@@ -41,8 +41,8 @@ let retryCount = 0;
 let retryTimer = null;
 
 // ---------------------------------------------------------------------------
-// Icon: chọn định dạng theo hệ điều hành (.ico cho Windows, .icns cho macOS,
-// .png cho Linux), thiếu file nào thì lùi về .png.
+// Icon: pick the format per OS (.ico for Windows, .icns for macOS,
+// .png for Linux), falling back to .png when missing.
 // ---------------------------------------------------------------------------
 function getIconPath() {
   const dir = path.join(__dirname, 'assets');
@@ -58,16 +58,16 @@ function getIconPath() {
 
 function getTrayIcon() {
   const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
-  // macOS dùng icon 16-22px trên menu bar; Windows tự scale nhưng resize cho nét.
+  // macOS menu bar uses 16-22px icons; Windows scales but resizing keeps it crisp.
   const size = process.platform === 'darwin' ? 18 : 16;
   return img.resize({ width: size, height: size });
 }
 
 // ---------------------------------------------------------------------------
-// Phân loại URL
+// URL classification
 // ---------------------------------------------------------------------------
 function isInternalUrl(url) {
-  if (url === 'about:blank' || url === 'about:blank#blocked') return true; // popup WebRTC
+  if (url === 'about:blank' || url === 'about:blank#blocked') return true; // WebRTC popup
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
@@ -79,8 +79,9 @@ function isInternalUrl(url) {
   }
 }
 
-// Mở link bằng trình duyệt hệ thống. Chỉ cho phép http/https —
-// các deep-link kiểu zalo:// bị chặn để app không bị "đá văng" sang app gốc.
+// Open a link in the system browser. Only http/https is allowed —
+// deep links such as zalo:// are blocked so the app never gets kicked
+// out to the native Zalo application.
 function openExternal(url) {
   try {
     const protocol = new URL(url).protocol;
@@ -88,14 +89,14 @@ function openExternal(url) {
       shell.openExternal(url);
     }
   } catch {
-    /* URL hỏng — bỏ qua */
+    /* malformed URL — ignore */
   }
 }
 
 // ---------------------------------------------------------------------------
-// Khởi động cùng hệ thống
-// Windows/macOS: dùng Login Items của hệ điều hành.
-// Linux: ghi file .desktop vào ~/.config/autostart (chuẩn XDG).
+// Launch at startup
+// Windows/macOS: use the OS Login Items.
+// Linux: write a .desktop file into ~/.config/autostart (XDG standard).
 // ---------------------------------------------------------------------------
 function linuxAutostartFile() {
   return path.join(app.getPath('home'), '.config', 'autostart', 'zaloweb.desktop');
@@ -105,7 +106,7 @@ function isAutoStartEnabled() {
   if (process.platform === 'linux') {
     return fs.existsSync(linuxAutostartFile());
   }
-  // Windows: phải truy vấn với đúng args đã đăng ký, nếu không openAtLogin luôn false
+  // Windows: must query with the exact registered args, otherwise openAtLogin is always false
   return app.getLoginItemSettings({ args: [AUTO_START_ARG] }).openAtLogin;
 }
 
@@ -120,7 +121,7 @@ function setAutoStart(enable) {
           '[Desktop Entry]',
           'Type=Application',
           'Name=Zalo Web',
-          'Comment=Khởi động Zalo cùng hệ thống',
+          'Comment=Start Zalo at login',
           `Exec="${process.execPath}" ${AUTO_START_ARG}`,
           'X-GNOME-Autostart-enabled=true',
           '',
@@ -132,14 +133,14 @@ function setAutoStart(enable) {
   } else {
     app.setLoginItemSettings({
       openAtLogin: enable,
-      openAsHidden: true, // macOS: mở ẩn
-      args: [AUTO_START_ARG], // Windows: mở ẩn qua cờ --hidden
+      openAsHidden: true, // macOS: open hidden
+      args: [AUTO_START_ARG], // Windows: open hidden via the --hidden flag
     });
   }
 }
 
 // ---------------------------------------------------------------------------
-// Đếm tin nhắn chưa đọc từ tiêu đề trang, ví dụ "(3) Zalo"
+// Unread message count parsed from the page title, e.g. "(3) Zalo"
 // ---------------------------------------------------------------------------
 function updateUnreadCount(title) {
   const m = /\((\d+)\+?\)/.exec(title || '');
@@ -148,38 +149,38 @@ function updateUnreadCount(title) {
   const increased = count > unreadCount;
   unreadCount = count;
 
-  // Tooltip ở khay hệ thống
+  // System tray tooltip
   if (tray) {
     tray.setToolTip(
-      count > 0 ? `Zalo — ${count} tin nhắn chưa đọc` : 'Zalo'
+      count > 0 ? `Zalo — ${count} unread messages` : 'Zalo'
     );
   }
 
-  // Badge trên Dock (macOS) / Launcher (Linux)
+  // Badge on the Dock (macOS) / Launcher (Linux)
   if (process.platform !== 'win32') {
     app.setBadgeCount(count);
   }
 
-  // Dấu chấm đỏ trên Taskbar (Windows)
+  // Red dot on the Taskbar (Windows)
   if (process.platform === 'win32' && mainWindow) {
     if (count > 0) {
       const badge = nativeImage.createFromPath(
         path.join(__dirname, 'assets', 'badge.png')
       );
-      mainWindow.setOverlayIcon(badge, `${count} tin nhắn chưa đọc`);
+      mainWindow.setOverlayIcon(badge, `${count} unread messages`);
     } else {
       mainWindow.setOverlayIcon(null, '');
     }
   }
 
-  // Nháy Taskbar khi có tin mới mà cửa sổ không focus
+  // Flash the Taskbar when new messages arrive while the window is unfocused
   if (increased && mainWindow && !mainWindow.isFocused()) {
     mainWindow.flashFrame(true);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Menu chuột phải: copy chữ, copy hình ảnh, copy/mở link...
+// Right-click menu: copy text, copy image, copy/open links...
 // ---------------------------------------------------------------------------
 function buildContextMenu(contents, params) {
   const menu = new Menu();
@@ -187,13 +188,13 @@ function buildContextMenu(contents, params) {
   if (params.linkURL) {
     menu.append(
       new MenuItem({
-        label: 'Mở liên kết bằng trình duyệt',
+        label: 'Open Link in Browser',
         click: () => openExternal(params.linkURL),
       })
     );
     menu.append(
       new MenuItem({
-        label: 'Sao chép địa chỉ liên kết',
+        label: 'Copy Link Address',
         click: () => clipboard.writeText(params.linkURL),
       })
     );
@@ -203,13 +204,13 @@ function buildContextMenu(contents, params) {
   if (params.mediaType === 'image') {
     menu.append(
       new MenuItem({
-        label: 'Sao chép hình ảnh',
+        label: 'Copy Image',
         click: () => contents.copyImageAt(params.x, params.y),
       })
     );
     menu.append(
       new MenuItem({
-        label: 'Lưu hình ảnh…',
+        label: 'Save Image…',
         click: () => contents.downloadURL(params.srcURL),
       })
     );
@@ -217,23 +218,23 @@ function buildContextMenu(contents, params) {
   }
 
   if (params.isEditable) {
-    menu.append(new MenuItem({ label: 'Cắt', role: 'cut' }));
-    menu.append(new MenuItem({ label: 'Sao chép', role: 'copy' }));
-    menu.append(new MenuItem({ label: 'Dán', role: 'paste' }));
-    menu.append(new MenuItem({ label: 'Chọn tất cả', role: 'selectAll' }));
+    menu.append(new MenuItem({ label: 'Cut', role: 'cut' }));
+    menu.append(new MenuItem({ label: 'Copy', role: 'copy' }));
+    menu.append(new MenuItem({ label: 'Paste', role: 'paste' }));
+    menu.append(new MenuItem({ label: 'Select All', role: 'selectAll' }));
   } else if (params.selectionText && params.selectionText.trim()) {
-    menu.append(new MenuItem({ label: 'Sao chép', role: 'copy' }));
+    menu.append(new MenuItem({ label: 'Copy', role: 'copy' }));
   }
 
   return menu.items.length > 0 ? menu : null;
 }
 
 // ---------------------------------------------------------------------------
-// Giám sát MỌI webContents (cửa sổ chính + mọi popup) — không link ngoài nào lọt qua
+// Watch EVERY webContents (main window + all popups) — no external link slips through
 // ---------------------------------------------------------------------------
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
-    // Popup nội bộ (about:blank cho WebRTC, cửa sổ gọi thoại/video...)
+    // Internal popups (about:blank for WebRTC, voice/video call windows...)
     if (isInternalUrl(url)) {
       return {
         action: 'allow',
@@ -243,13 +244,13 @@ app.on('web-contents-created', (_event, contents) => {
         },
       };
     }
-    // Link web ngoài → trình duyệt mặc định (deep-link zalo:// bị chặn)
+    // External links → default browser (zalo:// deep links are blocked)
     openExternal(url);
     return { action: 'deny' };
   });
 
   contents.on('will-navigate', (event, url) => {
-    if (url.startsWith('file://')) return; // trang báo lỗi nội bộ
+    if (url.startsWith('file://')) return; // internal error page
     if (!isInternalUrl(url)) {
       event.preventDefault();
       openExternal(url);
@@ -263,30 +264,30 @@ app.on('web-contents-created', (_event, contents) => {
 });
 
 // ---------------------------------------------------------------------------
-// Bảo vệ kết nối: tự thử lại tối đa 10 lần, hỏng hẳn thì hiện trang lỗi thân thiện
+// Network resilience: retry up to 10 times, then show a friendly error page
 // ---------------------------------------------------------------------------
 function handleLoadFailure(errorCode, errorDescription) {
-  // -3 (ERR_ABORTED) thường do điều hướng bình thường, không phải lỗi mạng
+  // -3 (ERR_ABORTED) is usually a normal navigation, not a network failure
   if (errorCode === -3 || !mainWindow) return;
 
   if (retryCount < MAX_RETRY) {
     retryCount += 1;
     console.log(
-      `[ZaloWeb] Mất kết nối (${errorDescription}). Thử lại lần ${retryCount}/${MAX_RETRY}...`
+      `[ZaloWeb] Connection lost (${errorDescription}). Retry ${retryCount}/${MAX_RETRY}...`
     );
     clearTimeout(retryTimer);
     retryTimer = setTimeout(() => {
       if (mainWindow) mainWindow.loadURL(APP_URL);
     }, RETRY_DELAY_MS);
   } else {
-    console.log('[ZaloWeb] Kết nối hỏng hoàn toàn, hiển thị trang báo lỗi.');
+    console.log('[ZaloWeb] Connection failed for good, showing the error page.');
     retryCount = 0;
     mainWindow.loadFile(path.join(__dirname, 'error.html'));
   }
 }
 
 // ---------------------------------------------------------------------------
-// Cửa sổ chính
+// Main window
 // ---------------------------------------------------------------------------
 function createMainWindow(startHidden = false) {
   mainWindow = new BrowserWindow({
@@ -305,7 +306,7 @@ function createMainWindow(startHidden = false) {
     },
   });
 
-  // Cho phép mic/camera/chia sẻ màn hình/thông báo với origin nội bộ (WebRTC)
+  // Allow mic/camera/screen-share/notifications for internal origins (WebRTC)
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback) => {
       const allowed = [
@@ -331,7 +332,7 @@ function createMainWindow(startHidden = false) {
 
   mainWindow.webContents.on('did-finish-load', () => {
     const url = mainWindow.webContents.getURL();
-    if (!url.startsWith('file://')) retryCount = 0; // mạng ổn trở lại
+    if (!url.startsWith('file://')) retryCount = 0; // network is healthy again
   });
 
   mainWindow.webContents.on(
@@ -343,7 +344,7 @@ function createMainWindow(startHidden = false) {
 
   mainWindow.on('focus', () => mainWindow.flashFrame(false));
 
-  // Bấm (X): ẩn xuống khay (Windows/Linux) hoặc ẩn khỏi màn hình nhưng giữ trên Dock (macOS)
+  // Close button (X): hide to tray (Windows/Linux) or hide but stay on the Dock (macOS)
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
@@ -367,13 +368,13 @@ function showMainWindow() {
 }
 
 // ---------------------------------------------------------------------------
-// Khay hệ thống
+// System tray
 // ---------------------------------------------------------------------------
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
-    { label: 'Mở ứng dụng', click: showMainWindow },
+    { label: 'Open App', click: showMainWindow },
     {
-      label: 'Tải lại trang (Refresh)',
+      label: 'Reload Page',
       click: () => {
         retryCount = 0;
         if (mainWindow) mainWindow.loadURL(APP_URL);
@@ -381,17 +382,17 @@ function buildTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Khởi động cùng hệ thống',
+      label: 'Launch at Startup',
       type: 'checkbox',
       checked: isAutoStartEnabled(),
       click: (item) => {
         setAutoStart(item.checked);
-        tray.setContextMenu(buildTrayMenu()); // đồng bộ lại trạng thái tick
+        tray.setContextMenu(buildTrayMenu()); // re-sync the checkmark state
       },
     },
     { type: 'separator' },
     {
-      label: 'Thoát hẳn',
+      label: 'Quit',
       click: () => {
         isQuitting = true;
         app.quit();
@@ -409,7 +410,7 @@ function createTray() {
 }
 
 // ---------------------------------------------------------------------------
-// Application Menu cho macOS (để Cmd+C, Cmd+V, Cmd+Q... hoạt động)
+// Application Menu for macOS (so Cmd+C, Cmd+V, Cmd+Q... work)
 // ---------------------------------------------------------------------------
 function setupAppMenu() {
   if (process.platform === 'darwin') {
@@ -426,9 +427,9 @@ function setupAppMenu() {
 }
 
 // ---------------------------------------------------------------------------
-// Vòng đời ứng dụng
+// App lifecycle
 // ---------------------------------------------------------------------------
-app.userAgentFallback = USER_AGENT; // User-Agent toàn cục
+app.userAgentFallback = USER_AGENT; // global User-Agent
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -441,7 +442,7 @@ if (!gotLock) {
       app.setAppUserModelId('com.ducvd.zaloweb');
     }
     setupAppMenu();
-    // Khởi động cùng hệ thống → nằm im dưới khay, không bung cửa sổ
+    // Started at login → stay quiet in the tray, no window popping up
     const startHidden =
       process.argv.includes(AUTO_START_ARG) ||
       app.getLoginItemSettings().wasOpenedAsHidden;
@@ -449,15 +450,15 @@ if (!gotLock) {
     createTray();
   });
 
-  // macOS: bấm icon trên Dock thì hiện lại cửa sổ
+  // macOS: clicking the Dock icon brings the window back
   app.on('activate', showMainWindow);
 
   app.on('before-quit', () => {
     isQuitting = true;
   });
 
-  // Không thoát khi đóng hết cửa sổ — app sống ở khay hệ thống / Dock
+  // Do not quit when all windows are closed — the app lives in the tray / Dock
   app.on('window-all-closed', () => {
-    /* giữ app chạy nền */
+    /* keep running in the background */
   });
 }

@@ -1,8 +1,8 @@
 {
   "name": "zaloweb",
   "productName": "Zalo Web",
-  "version": "1.0.0",
-  "description": "Ứng dụng Zalo cho máy tính (bản web chat.zalo.me), xây dựng bằng Electron",
+  "version": "1.1.0",
+  "description": "Zalo desktop app (chat.zalo.me web version) built with Electron",
   "main": "main.js",
   "homepage": "https://chat.zalo.me",
   "author": {
@@ -52,7 +52,7 @@
       "icon": "assets/icon.png",
       "category": "Network;InstantMessaging",
       "maintainer": "Duc Vu <ducvd89@gmail.com>",
-      "synopsis": "Zalo Web cho Linux",
+      "synopsis": "Zalo Web for Linux",
       "desktop": {
         "StartupWMClass": "Zalo Web"
       }
