@@ -31,7 +31,7 @@
     h1 { font-size: 22px; margin: 0 0 8px; }
     p { font-size: 15px; opacity: 0.75; margin: 0 0 24px; line-height: 1.5; }
     button {
-      background: #0084ff;
+      background: #0068ff;
       color: #fff;
       border: none;
       border-radius: 8px;
@@ -40,7 +40,7 @@
       font-weight: 600;
       cursor: pointer;
     }
-    button:hover { background: #006ae0; }
+    button:hover { background: #0052cc; }
   </style>
 </head>
 <body>
@@ -55,9 +55,9 @@
   </div>
   <script>
     function retry() {
-      location.replace('https://www.messenger.com/');
+      location.replace('https://chat.zalo.me/');
     }
-    // Tự động kết nối lại khi có mạng trở lại
+    // Reconnect automatically as soon as the network is back
     window.addEventListener('online', retry);
   </script>
 </body>

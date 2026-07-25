@@ -1,10 +1,10 @@
 {
-  "name": "fbmess",
-  "productName": "FB Messenger",
-  "version": "1.1.2",
-  "description": "Facebook Messenger desktop app built with Electron",
+  "name": "zaloweb",
+  "productName": "Zalo Web",
+  "version": "1.1.0",
+  "description": "Zalo desktop app (chat.zalo.me web version) built with Electron",
   "main": "main.js",
-  "homepage": "https://www.messenger.com",
+  "homepage": "https://chat.zalo.me",
   "author": {
     "name": "Duc Vu",
     "email": "ducvd89@gmail.com"
@@ -23,8 +23,8 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.ducvd.fbmess",
-    "productName": "FB Messenger",
+    "appId": "com.ducvd.zaloweb",
+    "productName": "Zalo Web",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "compression": "normal",
     "files": [
@@ -52,9 +52,9 @@
       "icon": "assets/icon.png",
       "category": "Network;InstantMessaging",
       "maintainer": "Duc Vu <ducvd89@gmail.com>",
-      "synopsis": "Facebook Messenger for Linux",
+      "synopsis": "Zalo Web for Linux",
       "desktop": {
-        "StartupWMClass": "FB Messenger"
+        "StartupWMClass": "Zalo Web"
       }
     },
     "mac": {

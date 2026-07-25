@@ -12,26 +12,25 @@ const {
 const path = require('path');
 const fs = require('fs');
 
-const APP_URL = 'https://www.messenger.com/';
+const APP_URL = 'https://chat.zalo.me/';
 
-// Các host được phép mở NGAY TRONG ứng dụng (hệ sinh thái Facebook/Messenger).
-// Mọi thứ khác sẽ bị đẩy ra trình duyệt mặc định của hệ điều hành.
+// Hosts allowed to open INSIDE the app (Zalo ecosystem).
+// Everything else is pushed out to the OS default browser.
 const INTERNAL_HOSTS = [
-  'messenger.com',
-  'facebook.com',
-  'fb.com',
-  'fbcdn.net',
-  'fbsbx.com',
+  'zalo.me',      // chat.zalo.me, id.zalo.me (login), qr.zalo.me...
+  'zaloapp.com',
+  'zdn.vn',       // image/sticker CDN
+  'zadn.vn',      // legacy CDN
 ];
 
-// UA của Chrome mới để Facebook không chặn "trình duyệt cũ" (đặc biệt quan trọng với Zalo).
+// Modern Chrome UA so Zalo does not block "outdated/unknown browsers".
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 const MAX_RETRY = 10;
 const RETRY_DELAY_MS = 3000;
 
-// Cờ báo app được khởi động cùng hệ thống → mở ẩn dưới khay, không bung cửa sổ
+// Flag meaning the app was started at login → stay hidden in the tray
 const AUTO_START_ARG = '--hidden';
 
 let mainWindow = null;
@@ -42,8 +41,8 @@ let retryCount = 0;
 let retryTimer = null;
 
 // ---------------------------------------------------------------------------
-// Icon: chọn định dạng theo hệ điều hành (.ico cho Windows, .icns cho macOS,
-// .png cho Linux), thiếu file nào thì lùi về .png.
+// Icon: pick the format per OS (.ico for Windows, .icns for macOS,
+// .png for Linux), falling back to .png when missing.
 // ---------------------------------------------------------------------------
 function getIconPath() {
   const dir = path.join(__dirname, 'assets');
@@ -59,16 +58,16 @@ function getIconPath() {
 
 function getTrayIcon() {
   const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png'));
-  // macOS dùng icon 16-22px trên menu bar; Windows tự scale nhưng resize cho nét.
+  // macOS menu bar uses 16-22px icons; Windows scales but resizing keeps it crisp.
   const size = process.platform === 'darwin' ? 18 : 16;
   return img.resize({ width: size, height: size });
 }
 
 // ---------------------------------------------------------------------------
-// Phân loại URL
+// URL classification
 // ---------------------------------------------------------------------------
 function isInternalUrl(url) {
-  if (url === 'about:blank' || url === 'about:blank#blocked') return true; // popup WebRTC
+  if (url === 'about:blank' || url === 'about:blank#blocked') return true; // WebRTC popup
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
@@ -80,142 +79,68 @@ function isInternalUrl(url) {
   }
 }
 
-// Bóc URL gốc khỏi Link Shim của Facebook (l.facebook.com/l.php?u=...)
-function extractLinkShim(url) {
-  try {
-    const u = new URL(url);
-    const isShim =
-      (u.hostname === 'l.facebook.com' ||
-        u.hostname === 'lm.facebook.com' ||
-        u.hostname === 'l.messenger.com') &&
-      u.pathname === '/l.php';
-    if (isShim) {
-      const target = u.searchParams.get('u');
-      if (target) return target;
-    }
-  } catch {
-    /* không phải URL hợp lệ */
-  }
-  return null;
-}
-
-// Mở link bằng trình duyệt hệ thống. Chỉ cho phép http/https —
-// các deep-link kiểu zalo://, fb-messenger:// bị chặn để app không bị "đá văng".
+// Open a link in the system browser. Only http/https is allowed —
+// deep links such as zalo:// are blocked so the app never gets kicked
+// out to the native Zalo application.
 function openExternal(url) {
-  const real = extractLinkShim(url) || url;
   try {
-    const protocol = new URL(real).protocol;
+    const protocol = new URL(url).protocol;
     if (protocol === 'http:' || protocol === 'https:') {
-      shell.openExternal(real);
+      shell.openExternal(url);
     }
   } catch {
-    /* URL hỏng — bỏ qua */
+    /* malformed URL — ignore */
   }
 }
 
 // ---------------------------------------------------------------------------
-// Khởi động cùng hệ thống
-// Windows: dùng Task Scheduler (không bị Windows/AV vô hiệu hóa như Run key).
-// macOS: dùng Login Items của hệ điều hành.
-// Linux: ghi file .desktop vào ~/.config/autostart (chuẩn XDG).
+// Launch at startup
+// Windows/macOS: use the OS Login Items.
+// Linux: write a .desktop file into ~/.config/autostart (XDG standard).
 // ---------------------------------------------------------------------------
-const { execFileSync } = require('child_process');
-const WIN_TASK_NAME = 'FBMessengerAutoStart';
-
-function runPowerShell(command) {
-  execFileSync(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', command],
-    { stdio: 'ignore', windowsHide: true }
-  );
-}
-
-function winTaskExists() {
-  try {
-    runPowerShell(
-      `if (Get-ScheduledTask -TaskName '${WIN_TASK_NAME}' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }`
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function winTaskCreate() {
-  const exe = process.execPath.replace(/'/g, "''");
-  runPowerShell(
-    `$a = New-ScheduledTaskAction -Execute '${exe}' -Argument '${AUTO_START_ARG}'; ` +
-      `$t = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME; ` +
-      // ExecutionTimeLimit 0 = không giới hạn thời gian chạy (mặc định task bị ngắt sau 3 ngày)
-      `$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0); ` +
-      `Register-ScheduledTask -TaskName '${WIN_TASK_NAME}' -Action $a -Trigger $t -Settings $s -Force | Out-Null`
-  );
-}
-
-function winTaskDelete() {
-  runPowerShell(
-    `Unregister-ScheduledTask -TaskName '${WIN_TASK_NAME}' -Confirm:$false -ErrorAction SilentlyContinue`
-  );
-}
-
 function linuxAutostartFile() {
-  return path.join(app.getPath('home'), '.config', 'autostart', 'fbmess.desktop');
+  return path.join(app.getPath('home'), '.config', 'autostart', 'zaloweb.desktop');
 }
-
-// Cache trạng thái để menu khay không phải gọi PowerShell mỗi lần mở
-let autoStartCache = null;
 
 function isAutoStartEnabled() {
-  if (process.platform === 'win32') {
-    if (autoStartCache === null) autoStartCache = winTaskExists();
-    return autoStartCache;
-  }
   if (process.platform === 'linux') {
     return fs.existsSync(linuxAutostartFile());
   }
-  return app.getLoginItemSettings().openAtLogin;
+  // Windows: must query with the exact registered args, otherwise openAtLogin is always false
+  return app.getLoginItemSettings({ args: [AUTO_START_ARG] }).openAtLogin;
 }
 
 function setAutoStart(enable) {
-  try {
-    if (process.platform === 'win32') {
-      if (enable) {
-        winTaskCreate();
-        // Dọn phương pháp cũ (Registry Run key từ bản 1.1.x trước) để không khởi động 2 lần
-        app.setLoginItemSettings({ openAtLogin: false, args: [AUTO_START_ARG] });
-      } else {
-        winTaskDelete();
-      }
-      autoStartCache = winTaskExists(); // xác nhận trạng thái thật sau thao tác
-    } else if (process.platform === 'linux') {
-      const file = linuxAutostartFile();
-      if (enable) {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(
-          file,
-          [
-            '[Desktop Entry]',
-            'Type=Application',
-            'Name=FB Messenger',
-            'Comment=Start Messenger at login',
-            `Exec="${process.execPath}" ${AUTO_START_ARG}`,
-            'X-GNOME-Autostart-enabled=true',
-            '',
-          ].join('\n')
-        );
-      } else {
-        fs.rmSync(file, { force: true });
-      }
+  if (process.platform === 'linux') {
+    const file = linuxAutostartFile();
+    if (enable) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(
+        file,
+        [
+          '[Desktop Entry]',
+          'Type=Application',
+          'Name=Zalo Web',
+          'Comment=Start Zalo at login',
+          `Exec="${process.execPath}" ${AUTO_START_ARG}`,
+          'X-GNOME-Autostart-enabled=true',
+          '',
+        ].join('\n')
+      );
     } else {
-      app.setLoginItemSettings({ openAtLogin: enable, openAsHidden: true });
+      fs.rmSync(file, { force: true });
     }
-  } catch (err) {
-    console.log(`[FBMess] Failed to update auto-start: ${err.message}`);
+  } else {
+    app.setLoginItemSettings({
+      openAtLogin: enable,
+      openAsHidden: true, // macOS: open hidden
+      args: [AUTO_START_ARG], // Windows: open hidden via the --hidden flag
+    });
   }
 }
 
 // ---------------------------------------------------------------------------
-// Đếm tin nhắn chưa đọc từ tiêu đề trang, ví dụ "(3) Messenger"
+// Unread message count parsed from the page title, e.g. "(3) Zalo"
 // ---------------------------------------------------------------------------
 function updateUnreadCount(title) {
   const m = /\((\d+)\+?\)/.exec(title || '');
@@ -224,19 +149,19 @@ function updateUnreadCount(title) {
   const increased = count > unreadCount;
   unreadCount = count;
 
-  // Tooltip ở khay hệ thống
+  // System tray tooltip
   if (tray) {
     tray.setToolTip(
-      count > 0 ? `Messenger — ${count} unread messages` : 'Messenger'
+      count > 0 ? `Zalo — ${count} unread messages` : 'Zalo'
     );
   }
 
-  // Badge trên Dock (macOS) / Launcher (Linux)
+  // Badge on the Dock (macOS) / Launcher (Linux)
   if (process.platform !== 'win32') {
     app.setBadgeCount(count);
   }
 
-  // Dấu chấm đỏ trên Taskbar (Windows)
+  // Red dot on the Taskbar (Windows)
   if (process.platform === 'win32' && mainWindow) {
     if (count > 0) {
       const badge = nativeImage.createFromPath(
@@ -248,30 +173,29 @@ function updateUnreadCount(title) {
     }
   }
 
-  // Nháy Taskbar khi có tin mới mà cửa sổ không focus
+  // Flash the Taskbar when new messages arrive while the window is unfocused
   if (increased && mainWindow && !mainWindow.isFocused()) {
     mainWindow.flashFrame(true);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Menu chuột phải: copy chữ, copy hình ảnh, copy/mở link...
+// Right-click menu: copy text, copy image, copy/open links...
 // ---------------------------------------------------------------------------
 function buildContextMenu(contents, params) {
   const menu = new Menu();
 
   if (params.linkURL) {
-    const realLink = extractLinkShim(params.linkURL) || params.linkURL;
     menu.append(
       new MenuItem({
         label: 'Open Link in Browser',
-        click: () => openExternal(realLink),
+        click: () => openExternal(params.linkURL),
       })
     );
     menu.append(
       new MenuItem({
         label: 'Copy Link Address',
-        click: () => clipboard.writeText(realLink),
+        click: () => clipboard.writeText(params.linkURL),
       })
     );
     menu.append(new MenuItem({ type: 'separator' }));
@@ -306,17 +230,11 @@ function buildContextMenu(contents, params) {
 }
 
 // ---------------------------------------------------------------------------
-// Giám sát MỌI webContents (cửa sổ chính + mọi popup) — không link ngoài nào lọt qua
+// Watch EVERY webContents (main window + all popups) — no external link slips through
 // ---------------------------------------------------------------------------
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
-    // Link Shim → bóc URL gốc, đẩy ra trình duyệt, bỏ qua lớp tracking
-    const shimTarget = extractLinkShim(url);
-    if (shimTarget) {
-      openExternal(shimTarget);
-      return { action: 'deny' };
-    }
-    // Popup nội bộ (về about:blank cho WebRTC, cửa sổ gọi thoại/video...)
+    // Internal popups (about:blank for WebRTC, voice/video call windows...)
     if (isInternalUrl(url)) {
       return {
         action: 'allow',
@@ -326,19 +244,13 @@ app.on('web-contents-created', (_event, contents) => {
         },
       };
     }
-    // Link web ngoài → trình duyệt mặc định
+    // External links → default browser (zalo:// deep links are blocked)
     openExternal(url);
     return { action: 'deny' };
   });
 
   contents.on('will-navigate', (event, url) => {
-    if (url.startsWith('file://')) return; // trang báo lỗi nội bộ
-    const shimTarget = extractLinkShim(url);
-    if (shimTarget) {
-      event.preventDefault();
-      openExternal(shimTarget);
-      return;
-    }
+    if (url.startsWith('file://')) return; // internal error page
     if (!isInternalUrl(url)) {
       event.preventDefault();
       openExternal(url);
@@ -352,30 +264,30 @@ app.on('web-contents-created', (_event, contents) => {
 });
 
 // ---------------------------------------------------------------------------
-// Bảo vệ kết nối: tự thử lại tối đa 10 lần, hỏng hẳn thì hiện trang lỗi thân thiện
+// Network resilience: retry up to 10 times, then show a friendly error page
 // ---------------------------------------------------------------------------
 function handleLoadFailure(errorCode, errorDescription) {
-  // -3 (ERR_ABORTED) thường do điều hướng bình thường, không phải lỗi mạng
+  // -3 (ERR_ABORTED) is usually a normal navigation, not a network failure
   if (errorCode === -3 || !mainWindow) return;
 
   if (retryCount < MAX_RETRY) {
     retryCount += 1;
     console.log(
-      `[FBMess] Connection lost (${errorDescription}). Retry ${retryCount}/${MAX_RETRY}...`
+      `[ZaloWeb] Connection lost (${errorDescription}). Retry ${retryCount}/${MAX_RETRY}...`
     );
     clearTimeout(retryTimer);
     retryTimer = setTimeout(() => {
       if (mainWindow) mainWindow.loadURL(APP_URL);
     }, RETRY_DELAY_MS);
   } else {
-    console.log('[FBMess] Connection failed permanently, showing error page.');
+    console.log('[ZaloWeb] Connection failed for good, showing the error page.');
     retryCount = 0;
     mainWindow.loadFile(path.join(__dirname, 'error.html'));
   }
 }
 
 // ---------------------------------------------------------------------------
-// Cửa sổ chính
+// Main window
 // ---------------------------------------------------------------------------
 function createMainWindow(startHidden = false) {
   mainWindow = new BrowserWindow({
@@ -386,7 +298,7 @@ function createMainWindow(startHidden = false) {
     show: !startHidden,
     icon: getIconPath(),
     autoHideMenuBar: true,
-    title: 'Messenger',
+    title: 'Zalo',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -394,7 +306,7 @@ function createMainWindow(startHidden = false) {
     },
   });
 
-  // Cho phép mic/camera/chia sẻ màn hình/thông báo với origin nội bộ (WebRTC)
+  // Allow mic/camera/screen-share/notifications for internal origins (WebRTC)
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback) => {
       const allowed = [
@@ -420,7 +332,7 @@ function createMainWindow(startHidden = false) {
 
   mainWindow.webContents.on('did-finish-load', () => {
     const url = mainWindow.webContents.getURL();
-    if (!url.startsWith('file://')) retryCount = 0; // mạng ổn trở lại
+    if (!url.startsWith('file://')) retryCount = 0; // network is healthy again
   });
 
   mainWindow.webContents.on(
@@ -432,7 +344,7 @@ function createMainWindow(startHidden = false) {
 
   mainWindow.on('focus', () => mainWindow.flashFrame(false));
 
-  // Bấm (X): ẩn xuống khay (Windows/Linux) hoặc ẩn khỏi màn hình nhưng giữ trên Dock (macOS)
+  // Close button (X): hide to tray (Windows/Linux) or hide but stay on the Dock (macOS)
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
@@ -456,7 +368,7 @@ function showMainWindow() {
 }
 
 // ---------------------------------------------------------------------------
-// Khay hệ thống
+// System tray
 // ---------------------------------------------------------------------------
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
@@ -470,12 +382,12 @@ function buildTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Start with System',
+      label: 'Launch at Startup',
       type: 'checkbox',
       checked: isAutoStartEnabled(),
       click: (item) => {
         setAutoStart(item.checked);
-        tray.setContextMenu(buildTrayMenu()); // đồng bộ lại trạng thái tick
+        tray.setContextMenu(buildTrayMenu()); // re-sync the checkmark state
       },
     },
     { type: 'separator' },
@@ -491,14 +403,14 @@ function buildTrayMenu() {
 
 function createTray() {
   tray = new Tray(getTrayIcon());
-  tray.setToolTip('Messenger');
+  tray.setToolTip('Zalo');
   tray.setContextMenu(buildTrayMenu());
   tray.on('click', showMainWindow);
   tray.on('double-click', showMainWindow);
 }
 
 // ---------------------------------------------------------------------------
-// Application Menu cho macOS (để Cmd+C, Cmd+V, Cmd+Q... hoạt động)
+// Application Menu for macOS (so Cmd+C, Cmd+V, Cmd+Q... work)
 // ---------------------------------------------------------------------------
 function setupAppMenu() {
   if (process.platform === 'darwin') {
@@ -515,9 +427,9 @@ function setupAppMenu() {
 }
 
 // ---------------------------------------------------------------------------
-// Vòng đời ứng dụng
+// App lifecycle
 // ---------------------------------------------------------------------------
-app.userAgentFallback = USER_AGENT; // User-Agent toàn cục
+app.userAgentFallback = USER_AGENT; // global User-Agent
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -527,10 +439,10 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     if (process.platform === 'win32') {
-      app.setAppUserModelId('com.ducvd.fbmess');
+      app.setAppUserModelId('com.ducvd.zaloweb');
     }
     setupAppMenu();
-    // Khởi động cùng hệ thống → nằm im dưới khay, không bung cửa sổ
+    // Started at login → stay quiet in the tray, no window popping up
     const startHidden =
       process.argv.includes(AUTO_START_ARG) ||
       app.getLoginItemSettings().wasOpenedAsHidden;
@@ -538,15 +450,15 @@ if (!gotLock) {
     createTray();
   });
 
-  // macOS: bấm icon trên Dock thì hiện lại cửa sổ
+  // macOS: clicking the Dock icon brings the window back
   app.on('activate', showMainWindow);
 
   app.on('before-quit', () => {
     isQuitting = true;
   });
 
-  // Không thoát khi đóng hết cửa sổ — app sống ở khay hệ thống / Dock
+  // Do not quit when all windows are closed — the app lives in the tray / Dock
   app.on('window-all-closed', () => {
-    /* giữ app chạy nền */
+    /* keep running in the background */
   });
 }
