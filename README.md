@@ -1,40 +1,38 @@
-# Zalo Web Desktop
+# FB Messenger Desktop
 
-Zalo desktop app (wrapping the `chat.zalo.me` web version) for Windows / macOS / Linux, built with Electron.
+Ứng dụng Facebook Messenger cho máy tính (Windows / macOS / Linux) xây dựng bằng Electron.
 
-## Run in development
+## Chạy thử
 
 ```bash
 npm install
 npm start
 ```
 
-## Packaging
+## Đóng gói
 
-| Command | Output |
+| Lệnh | Kết quả |
 |---|---|
-| `npm run dist:win` | `.exe` installer (NSIS) for Windows |
-| `npm run dist:linux` | `.pacman` package for Arch/CachyOS (run on Linux) |
-| `npm run dist:mac` | `.dmg` for macOS (run on a Mac) |
+| `npm run dist:win` | File cài đặt `.exe` (NSIS) cho Windows |
+| `npm run dist:linux` | Gói `.pacman` cho Arch/CachyOS (chạy trên máy Linux) |
+| `npm run dist:mac` | File `.dmg` cho macOS (chạy trên máy Mac) |
 
-Artifacts are written to the `dist/` folder.
+File xuất ra nằm trong thư mục `dist/`.
 
-> Note: the `.pacman` package must be built on Linux and the `.dmg` on macOS
-> (an electron-builder limitation). The `.exe` builds right on Windows.
+> Lưu ý: gói `.pacman` phải build trên Linux, `.dmg` phải build trên macOS
+> (giới hạn của electron-builder). Build `.exe` thực hiện ngay trên Windows.
 
-## Features
+## Tính năng
 
-- System tray: Open App / Reload Page / Launch at Startup (with a checkmark
-  showing its state) / Quit; the (X) button only hides the app to the tray.
-- Unread message counter parsed from the page title: tray tooltip, red-dot
-  overlay on the Windows Taskbar, badge on the macOS Dock / Linux launcher.
-- Right-click menu: copy text, copy/save images, copy/open links.
-- External links open in the OS default browser; `zalo://` deep links are
-  blocked so the app never gets kicked out to the native Zalo application.
-- `about:blank` popups and internal zalo.me / zaloapp.com links are allowed
-  inside the app so voice / video calls (WebRTC) work smoothly.
-- Network resilience: retries up to 10 times on connection loss, then shows
-  a friendly error page that reconnects automatically once back online.
-- macOS: native Application Menu so Cmd+C / Cmd+V / Cmd+Q work.
-- Modern Chrome User-Agent set globally so Zalo does not reject the app as
-  an outdated browser.
+- Khay hệ thống: Mở ứng dụng / Tải lại trang / Thoát hẳn; bấm (X) chỉ ẩn app.
+- Đếm tin nhắn chưa đọc: tiêu đề cửa sổ, tooltip ở khay, chấm đỏ trên Taskbar
+  (Windows) và badge trên Dock (macOS) / Launcher (Linux).
+- Chuột phải: sao chép chữ, sao chép/lưu hình ảnh, sao chép/mở liên kết.
+- Link ngoài mở bằng trình duyệt mặc định; tự bóc URL gốc khỏi Link Shim
+  (`l.facebook.com/l.php?u=...`) để bỏ qua lớp tracking.
+- Cho phép popup `about:blank` và link nội bộ messenger.com/facebook.com để
+  gọi thoại / gọi video (WebRTC) hoạt động; chặn deep-link (`zalo://`, ...).
+- Mất mạng: tự thử lại tối đa 10 lần, hỏng hẳn thì hiện trang lỗi thân thiện,
+  có mạng lại thì tự kết nối.
+- macOS: có Application Menu để Cmd+C / Cmd+V / Cmd+Q hoạt động.
+- User-Agent Chrome mới cài toàn cục để không bị chặn "trình duyệt cũ".
