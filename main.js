@@ -8,6 +8,7 @@ const {
   clipboard,
   nativeImage,
   session,
+  ipcMain,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -33,12 +34,26 @@ const RETRY_DELAY_MS = 3000;
 // Flag meaning the app was started at login → stay hidden in the tray
 const AUTO_START_ARG = '--hidden';
 
+// Our own URL scheme (clashes with nothing) and the one the native Zalo
+// client owns — taking that one over is opt-in, see the tray menu.
+const OWN_PROTOCOL = 'zaloweb';
+const ZALO_PROTOCOL = 'zalo';
+
 let mainWindow = null;
+let linkWindow = null;
 let tray = null;
 let isQuitting = false;
 let unreadCount = 0;
 let retryCount = 0;
 let retryTimer = null;
+
+// URL the window is meant to be showing. Retries and "Reload Page" go back to
+// the deep link the user opened instead of always landing on APP_URL.
+let currentUrl = APP_URL;
+
+// A deep link that arrived before the app was ready (macOS fires `open-url`
+// very early); replayed once the window exists.
+let pendingDeepLink = null;
 
 // ---------------------------------------------------------------------------
 // Icon: pick the format per OS (.ico for Windows, .icns for macOS,
@@ -91,6 +106,176 @@ function openExternal(url) {
   } catch {
     /* malformed URL — ignore */
   }
+}
+
+// ---------------------------------------------------------------------------
+// Deep links: bring Zalo links opened OUTSIDE the app back INTO it.
+//
+// Accepted shapes:
+//   https://zalo.me/g/<code>     group invite — loaded as-is, Zalo redirects
+//                                through id.zalo.me and lands on the group
+//   https://chat.zalo.me/...     loaded as-is
+//   zalo://zalo.me/g/<code>      rewritten to https
+//   zalo://conversation?id=...   no web equivalent, opens the app itself
+//   zaloweb://open?url=<encoded> escape hatch for scripts / other apps
+//
+// Anything that is not a Zalo link returns null and keeps going to the OS
+// browser, so this can never become an open redirect into the app shell.
+// ---------------------------------------------------------------------------
+function toInternalUrl(raw, depth = 0) {
+  if (typeof raw !== 'string' || !raw.trim() || depth > 3) return null;
+
+  let u;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+
+  // Plain web links: keep only the ones inside the Zalo ecosystem.
+  if (u.protocol === 'https:' || u.protocol === 'http:') {
+    if (!isInternalUrl(u.href)) return null;
+    u.protocol = 'https:';
+    return u.href;
+  }
+
+  if (u.protocol !== OWN_PROTOCOL + ':' && u.protocol !== ZALO_PROTOCOL + ':') {
+    return null;
+  }
+
+  // zaloweb://open?url=https%3A%2F%2Fzalo.me%2Fg%2Fabc — the wrapped URL goes
+  // back through this same function, so only Zalo hosts survive.
+  if (u.protocol === OWN_PROTOCOL + ':' && u.hostname === 'open') {
+    return toInternalUrl(u.searchParams.get('url'), depth + 1) || APP_URL;
+  }
+
+  // zalo://zalo.me/g/abc → https://zalo.me/g/abc
+  const host = u.hostname;
+  if (host && INTERNAL_HOSTS.some((h) => host === h || host.endsWith('.' + h))) {
+    return 'https://' + host + u.pathname + u.search + u.hash;
+  }
+
+  // Any other zalo:// shape has no documented web equivalent — open the app
+  // rather than dropping the click on the floor.
+  return APP_URL;
+}
+
+// Load a Zalo URL in the main window, creating / un-hiding it as needed.
+function openInApp(url) {
+  if (!app.isReady()) {
+    pendingDeepLink = url;
+    return;
+  }
+  if (!mainWindow) {
+    createMainWindow(false, url);
+    return;
+  }
+
+  showMainWindow();
+
+  const loaded = mainWindow.webContents.getURL();
+  // Already where we were asked to go — just focus, no jarring SPA reload.
+  if (url === loaded || (url === APP_URL && loaded.startsWith(APP_URL))) return;
+
+  retryCount = 0;
+  currentUrl = url;
+  mainWindow.loadURL(url);
+}
+
+// Returns true when the URL was a Zalo link and got handled internally.
+function handleDeepLink(raw) {
+  const target = toInternalUrl(raw);
+  if (!target) return false;
+  openInApp(target);
+  return true;
+}
+
+// Windows / Linux hand the deep link over as a command-line argument, both on
+// a cold start and through the `second-instance` event.
+function deepLinkFromArgv(argv) {
+  return (
+    argv.slice(1).find((arg) => !arg.startsWith('-') && toInternalUrl(arg)) || null
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "Open Zalo Link" dialog — paste a link straight into the app.
+//
+// Windows routes https:// links by scheme, not by domain, so a zalo.me link
+// clicked anywhere else always lands in the default browser. This is the way
+// in that does not depend on the OS handing us anything.
+// ---------------------------------------------------------------------------
+function openLinkDialog() {
+  if (linkWindow) {
+    if (linkWindow.isMinimized()) linkWindow.restore();
+    linkWindow.focus();
+    return;
+  }
+
+  linkWindow = new BrowserWindow({
+    width: 520,
+    height: 230,
+    // Size the web page itself — the title bar height differs per OS and would
+    // otherwise eat into the form.
+    useContentSize: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: 'Open Zalo Link',
+    icon: getIconPath(),
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'open-link-preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  linkWindow.loadFile(path.join(__dirname, 'open-link.html'));
+  linkWindow.once('ready-to-show', () => linkWindow.show());
+  linkWindow.on('closed', () => {
+    linkWindow = null;
+  });
+}
+
+function closeLinkDialog() {
+  if (linkWindow) linkWindow.close();
+}
+
+// The renderer only ever hands over raw text; toInternalUrl decides whether it
+// is a Zalo link at all, so a typo cannot navigate the app somewhere else.
+ipcMain.handle('open-link', (_event, raw) => {
+  const target = toInternalUrl(raw);
+  if (!target) return { ok: false };
+  closeLinkDialog();
+  openInApp(target);
+  return { ok: true };
+});
+
+ipcMain.handle('clipboard-link', () => {
+  const text = clipboard.readText().trim();
+  return toInternalUrl(text) ? text : '';
+});
+
+ipcMain.on('close-link-dialog', closeLinkDialog);
+
+// In development the app runs as `electron .`, so the scheme has to point at
+// the Electron binary plus the project path; a packaged build needs neither.
+function protocolClientArgs() {
+  return app.isPackaged || !process.argv[1] ? [] : [path.resolve(process.argv[1])];
+}
+
+function isProtocolClient(scheme) {
+  return app.isDefaultProtocolClient(scheme, process.execPath, protocolClientArgs());
+}
+
+function setProtocolClient(scheme, enable) {
+  const args = protocolClientArgs();
+  return enable
+    ? app.setAsDefaultProtocolClient(scheme, process.execPath, args)
+    : app.removeAsDefaultProtocolClient(scheme, process.execPath, args);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +371,15 @@ function buildContextMenu(contents, params) {
   const menu = new Menu();
 
   if (params.linkURL) {
+    // A Zalo link stays home; anything else is a trip to the browser.
+    if (toInternalUrl(params.linkURL)) {
+      menu.append(
+        new MenuItem({
+          label: 'Open Link in Zalo',
+          click: () => handleDeepLink(params.linkURL),
+        })
+      );
+    }
     menu.append(
       new MenuItem({
         label: 'Open Link in Browser',
@@ -244,17 +438,17 @@ app.on('web-contents-created', (_event, contents) => {
         },
       };
     }
-    // External links → default browser (zalo:// deep links are blocked)
-    openExternal(url);
+    // zalo:// deep links land in this window instead of kicking us over to the
+    // native Zalo client; everything else goes out to the default browser.
+    if (!handleDeepLink(url)) openExternal(url);
     return { action: 'deny' };
   });
 
   contents.on('will-navigate', (event, url) => {
     if (url.startsWith('file://')) return; // internal error page
-    if (!isInternalUrl(url)) {
-      event.preventDefault();
-      openExternal(url);
-    }
+    if (isInternalUrl(url)) return;
+    event.preventDefault();
+    if (!handleDeepLink(url)) openExternal(url);
   });
 
   contents.on('context-menu', (_e, params) => {
@@ -277,7 +471,7 @@ function handleLoadFailure(errorCode, errorDescription) {
     );
     clearTimeout(retryTimer);
     retryTimer = setTimeout(() => {
-      if (mainWindow) mainWindow.loadURL(APP_URL);
+      if (mainWindow) mainWindow.loadURL(currentUrl);
     }, RETRY_DELAY_MS);
   } else {
     console.log('[ZaloWeb] Connection failed for good, showing the error page.');
@@ -289,7 +483,7 @@ function handleLoadFailure(errorCode, errorDescription) {
 // ---------------------------------------------------------------------------
 // Main window
 // ---------------------------------------------------------------------------
-function createMainWindow(startHidden = false) {
+function createMainWindow(startHidden = false, initialUrl = APP_URL) {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -324,7 +518,8 @@ function createMainWindow(startHidden = false) {
     }
   );
 
-  mainWindow.loadURL(APP_URL);
+  currentUrl = initialUrl;
+  mainWindow.loadURL(initialUrl);
 
   mainWindow.webContents.on('page-title-updated', (_e, title) => {
     updateUnreadCount(title);
@@ -341,6 +536,17 @@ function createMainWindow(startHidden = false) {
       if (isMainFrame) handleLoadFailure(errorCode, errorDescription);
     }
   );
+
+  // Ctrl+L (Cmd+L on macOS) opens the "paste a link" dialog, the way a browser
+  // would focus its address bar.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt || input.shift) return;
+    const mod = process.platform === 'darwin' ? input.meta : input.control;
+    if (mod && input.key && input.key.toLowerCase() === 'l') {
+      event.preventDefault();
+      openLinkDialog();
+    }
+  });
 
   mainWindow.on('focus', () => mainWindow.flashFrame(false));
 
@@ -373,12 +579,17 @@ function showMainWindow() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: 'Open App', click: showMainWindow },
+    { label: 'Open Zalo Link…', click: openLinkDialog },
     {
       label: 'Reload Page',
       click: () => {
         retryCount = 0;
-        if (mainWindow) mainWindow.loadURL(APP_URL);
+        if (mainWindow) mainWindow.loadURL(currentUrl);
       },
+    },
+    {
+      label: 'Back to Chat List',
+      click: () => openInApp(APP_URL),
     },
     { type: 'separator' },
     {
@@ -388,6 +599,17 @@ function buildTrayMenu() {
       click: (item) => {
         setAutoStart(item.checked);
         tray.setContextMenu(buildTrayMenu()); // re-sync the checkmark state
+      },
+    },
+    {
+      // Off by default: claiming zalo:// steals the scheme from the native
+      // Zalo client, so the user has to ask for it explicitly.
+      label: 'Open zalo:// Links in This App',
+      type: 'checkbox',
+      checked: isProtocolClient(ZALO_PROTOCOL),
+      click: (item) => {
+        setProtocolClient(ZALO_PROTOCOL, item.checked);
+        tray.setContextMenu(buildTrayMenu());
       },
     },
     { type: 'separator' },
@@ -435,18 +657,40 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', showMainWindow);
+  // A second launch is either a plain "open the app" or a deep link the OS
+  // handed to a brand new process — either way it belongs to this instance.
+  app.on('second-instance', (_event, argv) => {
+    const link = deepLinkFromArgv(argv);
+    if (!link || !handleDeepLink(link)) showMainWindow();
+  });
+
+  // macOS delivers deep links here, sometimes before the app is ready.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleDeepLink(url);
+  });
 
   app.whenReady().then(() => {
     if (process.platform === 'win32') {
       app.setAppUserModelId('com.ducvd.zaloweb');
     }
     setupAppMenu();
-    // Started at login → stay quiet in the tray, no window popping up
+
+    // zaloweb:// is ours alone, so claim it silently on every start.
+    setProtocolClient(OWN_PROTOCOL, true);
+
+    const initialUrl =
+      toInternalUrl(pendingDeepLink || deepLinkFromArgv(process.argv)) || APP_URL;
+    pendingDeepLink = null;
+
+    // Started at login → stay quiet in the tray, no window popping up.
+    // A deep link always wins over that: the user just clicked something.
     const startHidden =
-      process.argv.includes(AUTO_START_ARG) ||
-      app.getLoginItemSettings().wasOpenedAsHidden;
-    createMainWindow(startHidden);
+      initialUrl === APP_URL &&
+      (process.argv.includes(AUTO_START_ARG) ||
+        app.getLoginItemSettings().wasOpenedAsHidden);
+
+    createMainWindow(startHidden, initialUrl);
     createTray();
   });
 

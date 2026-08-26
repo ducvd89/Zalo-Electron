@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <title>Open Zalo Link</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 28px;
+      font-family: "Segoe UI", -apple-system, Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #1c1e21;
+      user-select: none;
+    }
+    h1 { font-size: 17px; margin: 0 0 4px; }
+    .hint { font-size: 13px; opacity: 0.7; margin: 0 0 14px; line-height: 1.45; }
+    code {
+      font-family: Consolas, "SF Mono", monospace;
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    input {
+      width: 100%;
+      font-family: inherit;
+      font-size: 14px;
+      padding: 11px 13px;
+      border: 1.5px solid #ccd0d5;
+      border-radius: 8px;
+      background: #fff;
+      color: inherit;
+      user-select: text;
+    }
+    input:focus { outline: none; border-color: #0068ff; }
+    input.bad { border-color: #e02c2c; }
+    .err {
+      font-size: 13px;
+      color: #e02c2c;
+      margin-top: 8px;
+      min-height: 18px;
+    }
+    .row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    button {
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
+      cursor: pointer;
+    }
+    .primary { background: #0068ff; color: #fff; }
+    .primary:hover { background: #0052cc; }
+    .ghost { background: rgba(0, 0, 0, 0.06); color: inherit; }
+    .ghost:hover { background: rgba(0, 0, 0, 0.12); }
+    @media (prefers-color-scheme: dark) {
+      body { background: #18191a; color: #e4e6eb; }
+      code { background: rgba(255, 255, 255, 0.1); }
+      input { background: #3a3b3c; border-color: #4e4f50; }
+      .ghost { background: rgba(255, 255, 255, 0.1); }
+      .ghost:hover { background: rgba(255, 255, 255, 0.18); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Open a Zalo link</h1>
+  <p class="hint">
+    Paste a link such as <code>https://zalo.me/g/…</code> and it opens
+    in the app instead of your browser.
+  </p>
+
+  <input id="url" type="text" spellcheck="false" autocomplete="off"
+         placeholder="https://zalo.me/g/…" />
+  <div class="err" id="err"></div>
+
+  <div class="row">
+    <button class="ghost" id="cancel">Cancel</button>
+    <button class="primary" id="go">Open</button>
+  </div>
+
+  <script>
+    const input = document.getElementById('url');
+    const err = document.getElementById('err');
+
+    function clearError() {
+      err.textContent = '';
+      input.classList.remove('bad');
+    }
+
+    async function submit() {
+      const value = input.value.trim();
+      if (!value) return;
+
+      const result = await window.zaloLink.open(value);
+      if (!result.ok) {
+        err.textContent = "That doesn't look like a Zalo link.";
+        input.classList.add('bad');
+        input.focus();
+        input.select();
+      }
+      // On success the main process closes this window for us.
+    }
+
+    document.getElementById('go').addEventListener('click', submit);
+    document.getElementById('cancel').addEventListener('click', () => window.zaloLink.cancel());
+    input.addEventListener('input', clearError);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+      if (e.key === 'Escape') window.zaloLink.cancel();
+    });
+
+    // Pre-fill when a Zalo link is already sitting on the clipboard — the
+    // usual case is "copy the link, then come here".
+    window.addEventListener('DOMContentLoaded', async () => {
+      const suggested = await window.zaloLink.clipboardLink();
+      if (suggested) input.value = suggested;
+      input.focus();
+      input.select();
+    });
+  </script>
+</body>
+</html>

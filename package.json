@@ -1,7 +1,7 @@
 {
   "name": "zaloweb",
   "productName": "Zalo Web",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Zalo desktop app (chat.zalo.me web version) built with Electron",
   "main": "main.js",
   "homepage": "https://chat.zalo.me",
@@ -27,9 +27,17 @@
     "productName": "Zalo Web",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "compression": "normal",
+    "protocols": [
+      {
+        "name": "Zalo Web Link",
+        "schemes": ["zaloweb"]
+      }
+    ],
     "files": [
       "main.js",
+      "open-link-preload.js",
       "error.html",
+      "open-link.html",
       "assets/**/*"
     ],
     "directories": {
@@ -54,7 +62,8 @@
       "maintainer": "Duc Vu <ducvd89@gmail.com>",
       "synopsis": "Zalo Web for Linux",
       "desktop": {
-        "StartupWMClass": "Zalo Web"
+        "StartupWMClass": "Zalo Web",
+        "MimeType": "x-scheme-handler/zaloweb;x-scheme-handler/zalo;"
       }
     },
     "mac": {
