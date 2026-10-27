@@ -62,7 +62,7 @@
       "maintainer": "Duc Vu <ducvd89@gmail.com>",
       "synopsis": "Zalo Web for Linux",
       "desktop": {
-        "StartupWMClass": "Zalo Web",
+        "StartupWMClass": "zalo-web",
         "MimeType": "x-scheme-handler/zaloweb;x-scheme-handler/zalo;"
       }
     },
