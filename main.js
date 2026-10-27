@@ -13,6 +13,14 @@ const {
 const path = require('path');
 const fs = require('fs');
 
+// Linux: run natively on Wayland and talk to the input method over text-input-v3,
+// so IMEs like fcitx5-lotus can read/replace surrounding text instead of using preedit.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+  app.commandLine.appendSwitch('enable-wayland-ime');
+  app.commandLine.appendSwitch('wayland-text-input-version', '3');
+}
+
 const APP_URL = 'https://chat.zalo.me/';
 
 // Hosts allowed to open INSIDE the app (Zalo ecosystem).
